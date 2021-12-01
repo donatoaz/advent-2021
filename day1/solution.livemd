@@ -1,0 +1,282 @@
+<!-- livebook:{"persist_outputs":true} -->
+<!-- vim: syntax=markdown -->
+
+# Advent of Code Day
+
+## Day 1: Sonar Sweep
+
+[https://adventofcode.com/2021/day/1](https://adventofcode.com/2021/day/1)
+
+### Part One
+
+You're minding your own business on a ship at sea when the overboard alarm goes off! You rush to see if you can help. Apparently, one of the Elves tripped and accidentally sent the sleigh keys flying into the ocean!
+
+Before you know it, you're inside a submarine the Elves keep ready for situations like this. It's covered in Christmas lights (because of course it is), and it even has an experimental antenna that should be able to track the keys if you can boost its signal strength high enough; there's a little meter that indicates the antenna's signal strength by displaying 0-50 _stars_.
+
+Your instincts tell you that in order to save Christmas, you'll need to get all _fifty stars_ by December 25th.
+
+Collect stars by solving puzzles. Two puzzles will be made available on each day in the Advent calendar; the second puzzle is unlocked when you complete the first. Each puzzle grants _one star_. Good luck!
+
+As the submarine drops below the surface of the ocean, it automatically performs a sonar sweep of the nearby sea floor. On a small screen, the sonar sweep report (your puzzle input) appears: each line is a measurement of the sea floor depth as the sweep looks further and further away from the submarine.
+
+For example, suppose you had the following report:
+
+```
+199
+200
+208
+210
+200
+207
+240
+269
+260
+263
+```
+
+This report indicates that, scanning outward from the submarine, the sonar sweep found depths of `199`, `200`, `208`, `210`, and so on.
+
+The first order of business is to figure out how quickly the depth increases, just so you know what you're dealing with - you never know if the keys will get <span title="Does this premise seem fishy to you?">carried into deeper water</span> by an ocean current or a fish or something.
+
+To do this, count _the number of times a depth measurement increases_ from the previous measurement. (There is no measurement before the first measurement.) In the example above, the changes are as follows:
+
+```
+199 (N/A - no previous measurement)
+200 (increased)
+208 (increased)
+210 (increased)
+200 (decreased)
+207 (increased)
+240 (increased)
+269 (increased)
+260 (decreased)
+263 (increased)
+```
+
+In this example, there are _`7`_ measurements that are larger than the previous measurement.
+
+_How many measurements are larger than the previous measurement?_
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Solution to part 1
+
+```elixir
+{:ok, file_content} = File.read("./day1/input")
+measurements = file_content |> String.split("\n", trim: true) |> Enum.map(&String.to_integer/1)
+```
+
+```output
+[140, 154, 165, 150, 151, 161, 172, 174, 166, 168, 176, 191, 192, 189, 190, 191, 202, 203, 206, 207,
+ 167, 179, 204, 206, 208, 209, 216, 198, 200, 207, 217, 218, 223, 227, 228, 243, 241, 246, 278, 255,
+ 256, 273, 295, 291, 288, 290, 303, 325, 301, 292, ...]
+```
+
+`Enum.chunk_every/4` takes an Enum, the window size and the step size and what to do with 
+leftovers.
+
+With this we can generate a list of 2-element lists that contain two consecutive measurements.
+
+```elixir
+measurement_pairs = measurements |> Enum.chunk_every(2, 1, :discard)
+```
+
+```output
+[
+  [140, 154],
+  [154, 165],
+  [165, 150],
+  [150, 151],
+  [151, 161],
+  [161, 172],
+  [172, 174],
+  [174, 166],
+  [166, 168],
+  [168, 176],
+  [176, 191],
+  [191, 192],
+  [192, 189],
+  [189, 190],
+  [190, 191],
+  [191, 202],
+  [202, 203],
+  [203, 206],
+  [206, 207],
+  [207, 167],
+  [167, 179],
+  [179, 204],
+  [204, 206],
+  [206, 208],
+  [208, 209],
+  [209, 216],
+  [216, 198],
+  [198, 200],
+  [200, 207],
+  [207, 217],
+  [217, 218],
+  [218, 223],
+  [223, 227],
+  [227, 228],
+  [228, 243],
+  [243, 241],
+  [241, 246],
+  [246, 278],
+  [278, 255],
+  [255, 256],
+  [256, 273],
+  [273, 295],
+  [295, 291],
+  [291, 288],
+  [288, 290],
+  [290, 303],
+  [303, 325],
+  [325, 301],
+  [301, ...],
+  [...],
+  ...
+]
+```
+
+And now we can just count the elements on this list of lists that matches the predicate that the second element (i.e. the later measurement) is greater then the first element.
+
+```elixir
+measurement_pairs |> Enum.count(fn [a, b] -> b > a end)
+```
+
+```output
+1298
+```
+
+### Part Two
+
+Considering every single measurement isn't as useful as you expected: there's just too much noise in the data.
+
+Instead, consider sums of a _three-measurement sliding window_. Again considering the above example:
+
+```
+199  A      
+200  A B    
+208  A B C  
+210    B C D
+200  E   C D
+207  E F   D
+240  E F G  
+269    F G H
+260      G H
+263        H
+```
+
+Start by comparing the first and second three-measurement windows. The measurements in the first window are marked `A` (`199`, `200`, `208`); their sum is `199 + 200 + 208 = 607`. The second window is marked `B` (`200`, `208`, `210`); its sum is `618`. The sum of measurements in the second window is larger than the sum of the first, so this first comparison _increased_.
+
+Your goal now is to count _the number of times the sum of measurements in this sliding window increases_ from the previous sum. So, compare `A` with `B`, then compare `B` with `C`, then `C` with `D`, and so on. Stop when there aren't enough measurements left to create a new three-measurement sum.
+
+In the above example, the sum of each three-measurement window is as follows:
+
+```
+A: 607 (N/A - no previous sum)
+B: 618 (increased)
+C: 618 (no change)
+D: 617 (decreased)
+E: 647 (increased)
+F: 716 (increased)
+G: 769 (increased)
+H: 792 (increased)
+```
+
+In this example, there are _`5`_ sums that are larger than the previous sum.
+
+Consider sums of a three-measurement sliding window. _How many sums are larger than the previous sum?_
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Solution to part 2
+
+<!-- livebook:{"break_markdown":true} -->
+
+This is a simple matter of changing our `Enum.chunk_every/4` parameters to comply to the new window.
+
+```elixir
+windowed_measurements = measurements |> Enum.chunk_every(3, 1, :discard)
+```
+
+```output
+[
+  [140, 154, 165],
+  [154, 165, 150],
+  [165, 150, 151],
+  [150, 151, 161],
+  [151, 161, 172],
+  [161, 172, 174],
+  [172, 174, 166],
+  [174, 166, 168],
+  [166, 168, 176],
+  [168, 176, 191],
+  [176, 191, 192],
+  [191, 192, 189],
+  [192, 189, 190],
+  [189, 190, 191],
+  [190, 191, 202],
+  [191, 202, 203],
+  [202, 203, 206],
+  [203, 206, 207],
+  [206, 207, 167],
+  [207, 167, 179],
+  [167, 179, 204],
+  [179, 204, 206],
+  [204, 206, 208],
+  [206, 208, 209],
+  [208, 209, 216],
+  [209, 216, 198],
+  [216, 198, 200],
+  [198, 200, 207],
+  [200, 207, 217],
+  [207, 217, 218],
+  [217, 218, 223],
+  [218, 223, 227],
+  [223, 227, 228],
+  [227, 228, 243],
+  [228, 243, 241],
+  [243, 241, 246],
+  [241, 246, 278],
+  [246, 278, 255],
+  [278, 255, 256],
+  [255, 256, 273],
+  [256, 273, 295],
+  [273, 295, 291],
+  [295, 291, 288],
+  [291, 288, 290],
+  [288, 290, 303],
+  [290, 303, 325],
+  [303, 325, 301],
+  [325, 301, ...],
+  [301, ...],
+  [...],
+  ...
+]
+```
+
+But we do need to sum the measurements as that is what will be used to evaluate whether there was an increase or not.
+
+```elixir
+summed_windowed_measurements = windowed_measurements |> Enum.map(fn [a, b, c] -> a + b + c end)
+```
+
+```output
+[459, 469, 466, 462, 484, 507, 512, 508, 510, 535, 559, 572, 571, 570, 583, 596, 611, 616, 580, 553,
+ 550, 589, 618, 623, 633, 623, 614, 605, 624, 642, 658, 668, 678, 698, 712, 730, 765, 779, 789, 784,
+ 824, 859, 874, 869, 881, 918, 929, 918, 884, 892, ...]
+```
+
+And following the same logic as on part one (which I will just pipeline here for simplicity) we have our result.
+
+```elixir
+summed_windowed_measurements
+|> Enum.chunk_every(2, 1, :discard)
+|> Enum.count(fn [a, b] -> b > a end)
+```
+
+```output
+1248
+```
+
+
