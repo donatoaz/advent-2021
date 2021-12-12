@@ -1,0 +1,106 @@
+<!-- livebook:{"persist_outputs":true} -->
+<!-- vim: syntax=markdown -->
+
+# Day 9: Smoke Basin
+
+## Setup
+
+```elixir
+Mix.install([{:kino, "~> 0.4.1"}])
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Please insert your input")
+```
+
+## Part 1
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+sample_input =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+  |> Enum.map(fn row ->
+    String.graphemes(row) |> Enum.map(&String.to_integer/1)
+  end)
+
+grid =
+  sample_input
+  |> Enum.with_index()
+  |> Enum.reduce(%{}, fn {row, j}, map ->
+    row
+    |> Enum.with_index()
+    |> Enum.reduce(map, fn {height, i}, other_map -> Map.put(other_map, {j, i}, height) end)
+  end)
+
+minima =
+  grid
+  |> Enum.flat_map(fn {point = {j, i}, height} ->
+    adjacents = [
+      Map.get(grid, {j - 1, i}),
+      Map.get(grid, {j + 1, i}),
+      Map.get(grid, {j, i - 1}),
+      Map.get(grid, {j, i + 1})
+    ]
+
+    case Enum.all?(adjacents, &(height < &1)) do
+      true -> [{point, height}]
+      _ -> []
+    end
+  end)
+
+# Solving part 1
+minima |> Enum.map(fn {_, h} -> h + 1 end) |> Enum.sum()
+```
+
+```output
+522
+```
+
+## Part 2
+
+Ok, so my idea now is to do some kind of BFS algorithm where I will start from each minima 
+(that I have from Part 1) and stop at 9s and nils. This should give me a list of all basins.
+
+Then I sort by size and get the last 3.
+
+Let's try it!
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+# BFSing requires a visited set, so I will have a set of nodes I havef already visited
+
+defmodule BasinsBfs do
+  def map_basin(grid, point), do: map_basin(_visited = MapSet.new(), point, grid)
+
+  def map_basin(visited, {j, i} = point, grid) do
+    if point in visited or grid[point] in [nil, 9] do
+      visited
+    else
+      MapSet.put(visited, point)
+      # pipeline here ensures we search serially, so we will keep a consistent visited set
+      |> map_basin({j - 1, i}, grid)
+      |> map_basin({j + 1, i}, grid)
+      |> map_basin({j, i - 1}, grid)
+      |> map_basin({j, i + 1}, grid)
+    end
+  end
+end
+
+minima
+|> Enum.map(fn {point, _} -> BasinsBfs.map_basin(grid, point) |> Enum.count() end)
+|> Enum.sort()
+|> Enum.take(-3)
+|> Enum.reduce(1, &(&1 * &2))
+```
+
+```output
+916688
+```
