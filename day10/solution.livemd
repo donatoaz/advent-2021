@@ -1,0 +1,112 @@
+<!-- livebook:{"persist_outputs":true} -->
+<!-- vim: syntax=markdown -->
+
+# Day 10: Syntax Scoring
+
+## Setup
+
+```elixir
+Mix.install([{:kino, "~> 0.4.1"}])
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Please insert your input")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+parsed_input =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+  |> Enum.map(&String.to_charlist/1)
+
+defmodule CheckSyntax do
+  def check(statement), do: check(statement, [])
+
+  defp check([], incomplete), do: {[], incomplete}
+  defp check([chr | rest], []), do: check(rest, [chr])
+
+  defp check([chr | rest], [last_chr | remaining] = chunks) do
+    # this is an opening chunk
+    if chr in [?{, ?[, ?(, ?<] do
+      check(rest, [chr | chunks])
+    else
+      # found a valid closing
+      if match_chunk(last_chr, chr) do
+        check(rest, remaining)
+      else
+        # this is an invalid statement
+        {[invert(last_chr), chr], []}
+      end
+    end
+  end
+
+  defp match_chunk(?{, ?}), do: true
+  defp match_chunk(?[, ?]), do: true
+  defp match_chunk(?(, ?)), do: true
+  defp match_chunk(?<, ?>), do: true
+  defp match_chunk(_, _), do: false
+
+  def invert(?{), do: ?}
+  def invert(?[), do: ?]
+  def invert(?(), do: ?)
+  def invert(?<), do: ?>
+
+  def points(?}), do: 1197
+  def points(?]), do: 57
+  def points(?)), do: 3
+  def points(?>), do: 25137
+
+  def completion_points(?}), do: 3
+  def completion_points(?]), do: 2
+  def completion_points(?)), do: 1
+  def completion_points(?>), do: 4
+end
+
+checked_input =
+  parsed_input
+  |> Enum.map(fn statement ->
+    {statement, CheckSyntax.check(statement)}
+  end)
+
+checked_input
+|> Enum.filter(fn {_, {chrlist, _}} -> !Enum.empty?(chrlist) end)
+|> Enum.reduce(0, fn {_, {[_, received], _}}, sum ->
+  sum + CheckSyntax.points(received)
+end)
+```
+
+```output
+345441
+```
+
+## Part 2
+
+We already have the valid, yet incomplete inputs. Since we already inverted
+the incompletes in the recursion above, all we need to do is filter for it
+map to get just them, invert them, score them and get the median.
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+score =
+  checked_input
+  |> Enum.filter(fn {_, {chrlist, _}} -> Enum.empty?(chrlist) end)
+  |> Enum.map(fn {_, {_, incomplete}} -> incomplete |> Enum.map(&CheckSyntax.invert/1) end)
+  |> Enum.map(fn completions ->
+    Enum.reduce(completions, 0, fn chr, sum -> 5 * sum + CheckSyntax.completion_points(chr) end)
+  end)
+  |> Enum.sort()
+
+Enum.at(score, div(length(score), 2))
+```
+
+```output
+3235371166
+```
