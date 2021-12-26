@@ -1,0 +1,212 @@
+<!-- vim: syntax=markdown -->
+<!-- livebook:{"persist_outputs":true} -->
+
+# Day 11: Dumbo Octopus
+
+## Setup
+
+```elixir
+Mix.install([{:kino, "~> 0.4.1"}])
+```
+
+```output
+Resolving Hex dependencies...
+Dependency resolution completed:
+New:
+  kino 0.4.1
+* Getting kino (Hex package)
+==> kino
+Compiling 19 files (.ex)
+Generated kino app
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Enter your input")
+```
+
+Alright! So, the basic idea here is to construct a grid map of all ocopi and their initial energy.
+
+We will then build a recursive solution in which we will try and apply the required rules.
+
+My idea is to model each individual octopus step as a "task" in a queue, that is basically a coordinate
+and the current octopus energy level. The step will increase the energy level up to 10. 10 means
+it is supposed to flash, which means we need to increase a counter, and enqueue another task to 
+increase neighbors' energy level as well.
+
+```elixir
+octopus_input_as_list =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+  |> Enum.map(fn line -> String.graphemes(line) |> Enum.map(&String.to_integer/1) end)
+
+octopi_map =
+  for {row, j} <- Enum.with_index(octopus_input_as_list),
+      {initial_energy, i} <- Enum.with_index(row),
+      into: %{},
+      do: {{j, i}, initial_energy}
+```
+
+```output
+%{
+  {4, 5} => 3,
+  {5, 9} => 2,
+  {1, 2} => 7,
+  {8, 5} => 3,
+  {0, 9} => 6,
+  {8, 6} => 1,
+  {5, 2} => 1,
+  {3, 6} => 4,
+  {2, 4} => 6,
+  {4, 8} => 3,
+  {6, 5} => 6,
+  {0, 3} => 3,
+  {1, 1} => 3,
+  {9, 6} => 2,
+  {4, 3} => 1,
+  {3, 7} => 5,
+  {5, 0} => 1,
+  {0, 5} => 6,
+  {0, 1} => 4,
+  {8, 9} => 1,
+  {4, 0} => 7,
+  {3, 2} => 5,
+  {9, 8} => 2,
+  {8, 1} => 6,
+  {7, 3} => 7,
+  {7, 9} => 4,
+  {0, 8} => 7,
+  {3, 1} => 2,
+  {6, 1} => 7,
+  {2, 0} => 8,
+  {8, 3} => 2,
+  {8, 4} => 3,
+  {2, 7} => 3,
+  {4, 6} => 7,
+  {9, 4} => 7,
+  {6, 2} => 8,
+  {0, 7} => 2,
+  {9, 0} => 5,
+  {7, 2} => 7,
+  {0, 0} => 5,
+  {8, 7} => 6,
+  {5, 8} => 3,
+  {7, 6} => 1,
+  {2, 8} => 1,
+  {1, 4} => 2,
+  {5, 6} => 6,
+  {9, 5} => 1,
+  {6, 6} => 1,
+  {9, ...} => 6,
+  {...} => 5,
+  ...
+}
+```
+
+```elixir
+defmodule FlashingModel do
+  def simulate(octopi_map) do
+    simulate(octopi_map, Map.keys(octopi_map), 0)
+  end
+
+  # the exit condition is the abssence of tasks to perform
+  # in which case we need to "flash" the octopi and reset their valuues
+  defp simulate(octopi_map, [], n_flashes) do
+    flashed_octopi_map =
+      Enum.reduce(octopi_map, octopi_map, fn
+        {k, v}, flashed_map when v > 9 -> %{flashed_map | k => 0}
+        _, flashed_map -> flashed_map
+      end)
+
+    {n_flashes, flashed_octopi_map}
+  end
+
+  defp simulate(octopi_map, [task_coord = {j, i} | queue], n_flashes) do
+    case octopi_map[task_coord] do
+      nil ->
+        simulate(octopi_map, queue, n_flashes)
+
+      energy_level when energy_level == 9 ->
+        neighbors = [
+          {j - 1, i - 1},
+          {j - 1, i},
+          {j - 1, i + 1},
+          {j, i - 1},
+          {j, i + 1},
+          {j + 1, i - 1},
+          {j + 1, i},
+          {j + 1, i + 1}
+        ]
+
+        simulate(
+          Map.put(octopi_map, task_coord, energy_level + 1),
+          queue ++ neighbors,
+          n_flashes + 1
+        )
+
+      energy_level when energy_level > 9 ->
+        simulate(octopi_map, queue, n_flashes)
+
+      energy_level ->
+        simulate(Map.put(octopi_map, task_coord, energy_level + 1), queue, n_flashes)
+    end
+  end
+
+  def pretty_print(octopi_map, rows, cols) do
+    for j <- 0..(rows - 1) do
+      for i <- 0..(cols - 1) do
+        IO.write(octopi_map[{j, i}])
+      end
+
+      IO.write("\n")
+    end
+
+    octopi_map
+  end
+end
+
+{n_flashes, final_octopi_state} =
+  1..100
+  |> Enum.reduce({0, octopi_map}, fn _, {n, octopi_state} ->
+    {n_flashes, new_octopi_state} = FlashingModel.simulate(octopi_state)
+
+    {n + n_flashes, new_octopi_state}
+  end)
+
+n_flashes
+```
+
+```output
+1665
+```
+
+## Part 2
+
+Part 2 wants us to flag when all octopi flash together.
+
+Since we already have our iterative process, it's enough to check when `n_flashes` is 100, since
+there is a 10x10 octopi formation...
+
+We can leverage `Enum.reduce_while/3` to keep on iterating until we get our desired condition.
+
+```elixir
+step_when_all_flashed =
+  1..1000
+  |> Enum.reduce_while({0, octopi_map}, fn step, {n, octopi_state} ->
+    {n_flashes, new_octopi_state} = FlashingModel.simulate(octopi_state)
+
+    if n_flashes == 100 do
+      {:halt, step}
+    else
+      {:cont, {n + n_flashes, new_octopi_state}}
+    end
+  end)
+```
+
+```output
+235
+```
