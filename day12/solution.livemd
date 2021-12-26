@@ -1,0 +1,225 @@
+<!-- vim: syntax=markdown -->
+<!-- livebook:{"persist_outputs":true} -->
+
+# Day 12: Passage Pathing
+
+## Setup
+
+```elixir
+Mix.install([{:kino, "~> 0.4.1"}])
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Place your input")
+```
+
+```elixir
+defmodule Util do
+  # This is a big ugly hack to flatten my BFS results...
+  # I will try and improve after I see @josevalim's solution.
+
+  def flatten_results(list), do: flatten_results([], list)
+
+  defp flatten_results(flat, []), do: flat
+
+  defp flatten_results(flat, [[h | _] = path | others]) when is_atom(h),
+    do: flatten_results([path | flat], others)
+
+  defp flatten_results(flat, [h | _] = path) when is_atom(h), do: [path | flat]
+
+  defp flatten_results(flat, [[] | rest]), do: flatten_results(flat, rest)
+
+  defp flatten_results(flat, [[h | t] | others]) do
+    flatten_results(flat, h)
+    |> flatten_results(t)
+    |> flatten_results(others)
+  end
+end
+```
+
+```output
+{:module, Util, <<70, 79, 82, 49, 0, 0, 6, ...>>, {:flatten_results, 2}}
+```
+
+## Part 1
+
+So, this seems like a DFS/BFS style challenge, in which we need to go from one start node to an 
+end node. However, in this case we can visit some nodes multiple times (whilst others we can't)
+and we should also collect all viable paths as we do so.
+
+My idea is to do it BFS-style and in the end we should have a list of viables paths.
+
+The first thing we need to do is model our DAG, which I will do so by constructing 
+a `Map<node, List<node>>`.
+
+AND we need to be aware that since nodes can be traversed both ways (a pair A-B indicates that
+you can go from A to B and from B to A), we need to model this in our map as well.
+
+The example
+
+```
+    start
+    /   \
+c--A-----b--d
+    \   /
+     end
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+parsed_input =
+  input
+  |> Kino.Input.read()
+  |> String.split("\n", trim: true)
+  |> Enum.map(fn e -> String.split(e, "-") |> Enum.map(&String.to_atom/1) end)
+
+dag =
+  for [a, b] <- parsed_input, reduce: %{} do
+    dag ->
+      updated_dag =
+        dag
+        |> Map.update(a, [b], &(&1 ++ [b]))
+
+      case b do
+        :end -> updated_dag
+        _ -> Map.update(updated_dag, b, [a], &(&1 ++ [a]))
+      end
+  end
+```
+
+```output
+%{
+  AP: [:vx],
+  DR: [:cu, :qc, :ny, :xx, :start, :xh],
+  LO: [:ny, :vx, :cu, :end],
+  cu: [:wf, :DR, :LO, :xx, :ny, :xh],
+  end: [:LO, :ny],
+  ny: [:LO, :cu, :DR, :end, :xx],
+  qc: [:vx, :DR],
+  start: [:xx, :xh, :DR],
+  vx: [:qc, :LO, :AP, :end],
+  wf: [:cu],
+  xh: [:xx, :start, :DR, :cu],
+  xx: [:xh, :start, :cu, :DR, :ny]
+}
+```
+
+Now we can start to BFS it collecting all paths, which we will check if fulfill our requirement 
+(of taking us from `start` to `end`) when we finish.
+
+My only fear is getting in an infinite loop where two big caves are adjascent and we just
+keep going back-and-forth... but let's code the naïve solution first.
+
+Whenever we are "at" a given node, that has X neighbors, we do know where we came from (visited)
+and know that we will fork X possible paths, so we will return X lists, which are the
+concatenation of the past visited nodes with each possible X forward paths.
+
+If we can't go any further (say because we reached the `end` or because the only way would violate
+our rule of not visiting small caves twice), then that's our exit condition.
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+defmodule FindPaths do
+  def find_paths(dag), do: find_paths([], dag, :start, 0)
+
+  defp find_paths(visited, _, :end, _), do: [:end | visited]
+
+  defp find_paths(visited, dag, node, depth) do
+    neighbors = dag[node] -- [:start]
+
+    for neighbor <- neighbors,
+        Atom.to_string(neighbor) != String.downcase(Atom.to_string(neighbor)) ||
+          neighbor not in visited do
+      find_paths([node | visited], dag, neighbor, depth + 1)
+    end
+  end
+end
+
+path_count =
+  FindPaths.find_paths(dag)
+  |> Util.flatten_results()
+  |> Enum.count()
+```
+
+```output
+4167
+```
+
+## Part 2
+
+Part two now allows us to visit a SINGLE small cave twice.
+
+I could use a map to track the number of times I've visited small caves, but how to avoid always
+favoring the first small cave we have a chance to revisit?
+
+Okay, so after slightly giving up, I got a slight hint from [@mariomelo](https://github.com/mariomelo/advent_of_code_2021/blob/main/day_12.livemd)
+that it would be a good idea to extract the comprehension guard clause and that I was only missing
+a single new condition.
+
+I got slightly stuck, because I was thinking I needed to pass around some kind of data structure
+holding the count of visits. But, the visited list in the first round was small enough that
+evaluating it at every pass for repeats seemed fine. The solution is most likely not optimal
+because the excerpt below runs in $O(N^2)$, but in the final solution it was running in 1,400ms
+in my Macbook M1.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# this is O(M*N) where M is the visited size and N is the number of repeated items
+double_visited_any_small_caves =
+      (visited -- Enum.uniq(visited))
+      |> Enum.map(&Atom.to_string/1)
+      |> Enum.filter(&(String.downcase(&1) == &1))
+      |> Enum.count() > 0
+```
+
+```elixir
+defmodule FindPathsWithRevisit do
+  def find_paths(dag), do: find_paths([], dag, :start, 0)
+
+  defp find_paths(visited, _, :end, _), do: [:end | visited]
+
+  defp find_paths(visited, dag, node, depth) do
+    neighbors = dag[node] -- [:start]
+
+    for neighbor <- neighbors,
+        is_valid_path?([node | visited], neighbor) do
+      find_paths([node | visited], dag, neighbor, depth + 1)
+    end
+  end
+
+  defp is_valid_path?(visited, candidate_node) do
+    # idea here is that a path is valid if visited contains but a single repeated small cave.
+    #  If we have already double visited, then we should already have a repeated small cave 
+    #  in our visited list
+    # I could do a visited -- Enum.uniq(visited), but is this O(n^2)?
+    # And then filter for small caves and check if there are any remaining elements
+
+    candidate_node_str = Atom.to_string(candidate_node)
+
+    double_visited_any_small_caves =
+      (visited -- Enum.uniq(visited))
+      |> Enum.map(&Atom.to_string/1)
+      |> Enum.filter(&(String.downcase(&1) == &1))
+      |> Enum.count() > 0
+
+    candidate_node_str == String.upcase(candidate_node_str) ||
+      candidate_node not in visited || !double_visited_any_small_caves
+  end
+end
+
+path_count =
+  FindPathsWithRevisit.find_paths(dag)
+  |> Util.flatten_results()
+  |> Enum.count()
+```
+
+```output
+98441
+```
