@@ -1,0 +1,121 @@
+<!-- livebook:{"persist_outputs":true} -->
+
+# Day 13: Transparent Origami
+
+## Setup
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.4.1"},
+  {:nx, "~> 0.1.0-dev", github: "elixir-nx/nx", branch: "main", sparse: "nx"}
+])
+```
+
+```output
+* Getting nx (https://github.com/elixir-nx/nx.git - origin/main)
+remote: Enumerating objects: 10883, done.        
+remote: Counting objects: 100% (2872/2872), done.        
+remote: Compressing objects: 100% (651/651), done.        
+remote: Total 10883 (delta 2393), reused 2547 (delta 2210), pack-reused 8011        
+Resolving Hex dependencies...
+Dependency resolution completed:
+New:
+  kino 0.4.1
+* Getting kino (Hex package)
+==> kino
+Compiling 19 files (.ex)
+Generated kino app
+==> nx
+Compiling 23 files (.ex)
+Generated nx app
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Place your input")
+```
+
+This seems like a problem that would be nice to solve with some matrix transformations.
+
+There is a projection matrix M that will map to the first fold K.
+
+$I . M = K$
+
+I think I can derive the formula by intuition, let's test with a 8x4 matrix
+
+```
+a b c d
+e f g h
+i j k i
+l m n o
+p q r s
+t u v x
+z w y å
+∫ ç ∂ ƒ
+```
+
+For a horizontal fold, along the center of the y axis, the resulting matrix would be
+
+```
+a+∫ b+ç c+∂ d+ƒ
+e+z f+w g+y h+å
+i+t j+u k+v i+x
+...
+```
+
+Considering how matrix product works, we need to transpose our original matrix then multiply by
+
+```
+1 0 0 0
+0 1 0 0
+0 0 1 0
+0 0 0 1
+0 0 0 1
+0 0 1 0
+0 1 0 0
+1 0 0 0
+```
+
+Which we can transpose again into the desired result.
+
+I think the issue is if we see a transform that is not symmetrical... but let's leave that for later
+
+$(I^T.M)^T = R$ which implies, by multiplication property, that $I.M^T = R$. So if we simply transpose
+our original transformation matrix we can do a simple
+
+$R = I.N$ where $N = M^T$
+
+For now we can clearly see that the pattern for M is
+
+```
+1 0 0
+0 1 0
+0 0 1
+... ...
+0 0 1
+0 1 0
+1 0 0
+```
+
+```elixir
+eye = Nx.eye(8)
+```
+
+```output
+#Nx.Tensor<
+  s64[8][8]
+  [
+    [1, 0, 0, 0, 0, 0, 0, 0],
+    [0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 0, 0, 1, 0, 0],
+    [0, 0, ...],
+    ...
+  ]
+>
+```

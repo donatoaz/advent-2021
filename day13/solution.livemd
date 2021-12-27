@@ -1,0 +1,118 @@
+<!-- vim: syntax=markdown -->
+<!-- livebook:{"persist_outputs":true} -->
+
+# Day 13: Transparent Origami
+
+## Setup
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.4.1"}
+])
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Place your input here")
+```
+
+<!-- livebook:{"reevaluate_automatically":true} -->
+
+```elixir
+[raw_coordinates | raw_fold_instructions] = input |> Kino.Input.read() |> String.split("\n\n")
+
+coordinates =
+  for point <- String.split(raw_coordinates, "\n"), reduce: MapSet.new() do
+    grid ->
+      [x, y] = String.split(point, ",") |> Enum.map(&String.to_integer/1)
+      MapSet.put(grid, {x, y})
+  end
+
+fold_instructions =
+  raw_fold_instructions
+  |> List.first()
+  |> String.split("\n")
+  |> Enum.map(fn
+    "fold along y=" <> y -> {:y, String.to_integer(y)}
+    "fold along x=" <> x -> {:x, String.to_integer(x)}
+  end)
+
+[{axis, first_fold_value} = _first_fold | _] = fold_instructions
+
+new_coordinates =
+  coordinates
+  |> Enum.reduce(MapSet.new(), fn
+    # new coordinate value is the logical OR of itself and the projected coordinate (when above the fold)
+    {x, y}, new_coords when axis == :y and y > first_fold_value ->
+      new_y = abs(y - 2 * first_fold_value)
+      MapSet.put(new_coords, {x, new_y})
+
+    {x, y}, new_coords when axis == :x and x > first_fold_value ->
+      new_x = abs(x - 2 * first_fold_value)
+      MapSet.put(new_coords, {new_x, y})
+
+    {x, y}, new_coords ->
+      MapSet.put(new_coords, {x, y})
+  end)
+
+new_coordinates |> Enum.count()
+```
+
+```output
+678
+```
+
+Cool, part 1 was a breeze. Now off to part 2, which I think will also be easy as pie.
+
+We will need to identify the characters, so a pretty print function will be required.
+
+```elixir
+origami =
+  fold_instructions
+  |> Enum.reduce(coordinates, fn {axis, fold}, coords ->
+    coords
+    |> Enum.reduce(MapSet.new(), fn
+      # new coordinate value is the logical OR of itself and the projected coordinate (when above the fold)
+      {x, y}, new_coords when axis == :y and y > fold ->
+        new_y = abs(y - 2 * fold)
+        MapSet.put(new_coords, {x, new_y})
+
+      {x, y}, new_coords when axis == :x and x > fold ->
+        new_x = abs(x - 2 * fold)
+        MapSet.put(new_coords, {new_x, y})
+
+      {x, y}, new_coords ->
+        MapSet.put(new_coords, {x, y})
+    end)
+  end)
+
+# IO.inspect(origami)
+
+Enum.each(0..5, fn y ->
+  Enum.each(0..39, fn x ->
+    if {x, y} in origami do
+      IO.write("#")
+    else
+      IO.write(".")
+    end
+  end)
+
+  IO.write("\n")
+end)
+```
+
+```output
+####..##..####.#..#.#....#..#.####.####.
+#....#..#.#....#..#.#....#..#....#.#....
+###..#....###..####.#....####...#..###..
+#....#....#....#..#.#....#..#..#...#....
+#....#..#.#....#..#.#....#..#.#....#....
+####..##..#....#..#.####.#..#.####.#....
+```
+
+```output
+:ok
+```
