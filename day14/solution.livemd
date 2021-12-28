@@ -1,0 +1,258 @@
+<!-- vim: syntax=markdown -->
+<!-- livebook:{"persist_outputs":true} -->
+
+# Day 14: Extended Polymerization
+
+## Setup
+
+```elixir
+Mix.install([
+  {:kino, "~> 0.4.1"}
+])
+```
+
+```output
+:ok
+```
+
+```elixir
+input = Kino.Input.textarea("Place your input here")
+```
+
+## Part 1
+
+I guess the idea is simple: build the insertion rules map, then use `Enum.chunk_every/2` to reduce
+the resulting polymer
+
+```elixir
+[initial_polymer | raw_insertion_rules] = input |> Kino.Input.read() |> String.split("\n\n")
+
+insertion_rules =
+  raw_insertion_rules
+  |> List.first()
+  |> String.split("\n")
+  |> Enum.reduce(%{}, fn rule_pair, rules ->
+    [pair, atom] = String.split(rule_pair, " -> ")
+    Map.put(rules, pair, atom)
+  end)
+
+polymer = initial_polymer |> String.graphemes()
+
+[final_polymer] =
+  1..10
+  |> Enum.reduce([polymer], fn _step, acc ->
+    [polymer] = acc
+
+    pairs =
+      polymer
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(&Enum.join/1)
+
+    new_poly =
+      for pair <- pairs, reduce: "" do
+        composed_polymer ->
+          [first, second] = String.graphemes(pair)
+
+          String.slice(composed_polymer, 0..-2) <>
+            first <> Map.get(insertion_rules, pair) <> second
+      end
+      |> String.graphemes()
+
+    [new_poly]
+  end)
+
+frequencies =
+  final_polymer
+  |> Enum.frequencies()
+  |> Map.values()
+
+max = Enum.max(frequencies)
+min = Enum.min(frequencies)
+
+max - min
+```
+
+```output
+2988
+```
+
+Ok, this ran awfully slow... on to Part 2.
+
+## Part 2
+
+As expected, Part 2 asks for 40 steps, which at the current complexity will be impossible.
+
+So let's think of ways to optimize.
+
+```elixir
+[initial_polymer | raw_insertion_rules] = input |> Kino.Input.read() |> String.split("\n\n")
+
+insertion_rules =
+  raw_insertion_rules
+  |> List.first()
+  |> String.split("\n")
+  |> Enum.reduce(%{}, fn rule_pair, rules ->
+    [pair, atom] = String.split(rule_pair, " -> ")
+    Map.put(rules, String.to_charlist(pair), String.to_charlist(atom))
+  end)
+
+defmodule Polymerize do
+  def polymerize([a | _] = seed, rules), do: polymerize(seed, rules, [a])
+
+  defp polymerize([_], _, polymer), do: polymer
+
+  defp polymerize([left | [right | _] = seed], rules, polymer) do
+    polymerize(seed, rules, polymer ++ rules[[left, right]] ++ [right])
+  end
+end
+
+1..2
+|> Enum.reduce(String.to_charlist(initial_polymer), fn _, next_poly ->
+  Polymerize.polymerize(next_poly, insertion_rules)
+end)
+```
+
+```output
+'VPVVFSCBHHBBKSSKKFPOOCCSKSSKKCCSCPPVPBBVBBCKOBHNNFFHFSCBHNNHNPPVPHHOHOHHPHHNN'
+```
+
+This is also taking too long even for 13 steps, certainly will not work for 40. I need to think
+of the problem differently.
+
+Ok... so I cheated just a bit from @rodrah: basically a way to simplify the problem is not
+keeping track of the entire polymer chain... but just the count of pairs and how they increase
+the chain...
+
+Let me try it.
+
+```elixir
+[initial_polymer, raw_insertion_rules] = input |> Kino.Input.read() |> String.split("\n\n")
+
+# This is a map of pair -> insertion
+insertion_rules =
+  raw_insertion_rules
+  |> String.split("\n")
+  |> Enum.reduce(%{}, fn rule_pair, rules ->
+    [pair, insertion] = String.split(rule_pair, " -> ")
+    Map.put(rules, pair, insertion)
+  end)
+  |> IO.inspect(label: "insertion rules")
+
+initial_pairs_with_frequency =
+  initial_polymer
+  |> String.graphemes()
+  |> Enum.chunk_every(2, 1, :discard)
+  |> Enum.map(&Enum.join/1)
+  |> Enum.frequencies()
+  |> IO.inspect(label: "First polymer pairs with frequencies")
+
+polymer_pairs =
+  1..40
+  |> Enum.reduce(initial_pairs_with_frequency, fn _, next_pairs_with_count ->
+    next_pairs_with_count
+    |> Enum.reduce(%{}, fn {pair, count}, next_poly ->
+      [left, right] = String.graphemes(pair)
+      insertion = insertion_rules[pair]
+
+      # The new polymer will contain two new pairs: left + insertion and insertion + right
+      next_poly
+      |> Map.update(left <> insertion, count, fn curr_count -> curr_count + count end)
+      |> Map.update(insertion <> right, count, fn curr_count -> curr_count + count end)
+    end)
+  end)
+
+polymer_atom_frequencies =
+  polymer_pairs
+  |> Enum.reduce(%{}, fn {pair, count}, counter ->
+    [left, _] = String.graphemes(pair)
+    Map.update(counter, left, count, fn current_count -> current_count + count end)
+  end)
+
+# we just need to correct for the last atom
+last_atom = initial_polymer |> String.graphemes() |> List.last()
+frequencies = Map.update(polymer_atom_frequencies, last_atom, 1, &(&1 + 1)) |> Map.values()
+
+max = Enum.max(frequencies)
+min = Enum.min(frequencies)
+
+max - min
+```
+
+```output
+insertion rules: %{
+  "HV" => "S",
+  "CB" => "H",
+  "PO" => "O",
+  "PV" => "B",
+  "HP" => "H",
+  "KC" => "C",
+  "HK" => "B",
+  "ON" => "H",
+  "VF" => "V",
+  "CP" => "P",
+  "OO" => "H",
+  "VV" => "P",
+  "FO" => "P",
+  "NB" => "S",
+  "KH" => "C",
+  "CN" => "S",
+  "SO" => "P",
+  "BS" => "O",
+  "HN" => "N",
+  "KB" => "V",
+  "CC" => "S",
+  "FF" => "H",
+  "CH" => "B",
+  "NF" => "F",
+  "SS" => "P",
+  "FP" => "B",
+  "PB" => "B",
+  "KN" => "F",
+  "SF" => "K",
+  "OK" => "C",
+  "FB" => "F",
+  "BO" => "C",
+  "OF" => "V",
+  "VO" => "K",
+  "KP" => "F",
+  "FC" => "S",
+  "OB" => "S",
+  "OC" => "C",
+  "CS" => "F",
+  "FN" => "B",
+  "SH" => "C",
+  "FK" => "F",
+  "NO" => "P",
+  "HF" => "P",
+  "CK" => "S",
+  "FH" => "C",
+  "HC" => "V",
+  "NC" => "F",
+  "VS" => "B",
+  "NS" => "C",
+  ...
+}
+First polymer pairs with frequencies: %{
+  "BO" => 1,
+  "CP" => 1,
+  "FH" => 2,
+  "HK" => 1,
+  "HN" => 1,
+  "HP" => 1,
+  "KC" => 1,
+  "KK" => 2,
+  "KO" => 1,
+  "NF" => 1,
+  "NP" => 1,
+  "OK" => 1,
+  "ON" => 1,
+  "PB" => 1,
+  "PH" => 1,
+  "PN" => 1,
+  "VF" => 1
+}
+```
+
+```output
+3572761917024
+```
